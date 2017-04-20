@@ -1,0 +1,52 @@
+{
+    "manifest_version": 2,
+    "name": "A Robot",
+    "version": "1.0",
+    "description": "一个自动脚本运行插件",
+    "author": "cal y",
+    "icons": {
+        "16": "img/robot_16px_1125682.png",
+        "48": "img/robot_48px_1125682.png",
+        "128": "img/robot_128px_1125682.png"
+    },
+    "browser_action": {
+        "default_icon": {
+            "16": "img/robot_16px_1125682.png",
+            "24": "img/robot_24px_1125682.png",
+            "48": "img/robot_48px_1125682.png"
+        },
+        "default_title": "A Robot"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "*://book.douban.com/*"
+            ],
+            "js": [
+                "js/jquery-3.2.1.min.js",
+                "js/dexie.min.js",
+                "js/douban-book.js"
+            ]
+        },
+        {
+            "matches": [
+                "*://*.instagram.com/p/*"
+            ],
+            "js": [
+                "js/ins.js"
+            ]
+        }
+    ],
+    "permissions": [
+        "notifications",
+        "storage",
+        "downloads",
+        "*://*.douban.com/*",
+        "*://*.instagram.com/*"
+    ],
+    "web_accessible_resources": [
+        "img/*.png",
+        "img/*.jpg",
+        "data/*.*"
+    ]
+}
