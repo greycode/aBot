@@ -192,10 +192,17 @@ function processDoubanBook() {
     })
 }
 
-function processDoubanBookX() {
+function processDoubanBookBreadth() {
+    if (stopRequest) return;
+    db.books.filter(x => !x.isDone).first().then(b => {
+        processBookDetailPage(b, processDoubanBookBreadth)
+    })
+}
+
+function processDoubanBookDeep() {
     if (stopRequest) return;
     db.books.filter(x => !x.isDone).last().then(b => {
-        processBookDetailPage(b, processDoubanBookX)
+        processBookDetailPage(b, processDoubanBookDeep)
     })
 }
 
@@ -287,9 +294,10 @@ function processBookDetailPage(b, caller) {
         try {
             $.ajax({ url: b.doubanRef, type: 'GET' })
                 .done(resp => {
-                    if (caller) caller()
+                    if (caller && caller == processDoubanBook) caller()
 
                     parseBookDetailPage($(resp), b, () => {
+                        if (caller && caller != processDoubanBook) caller()
                         getBooksNumInfo()
                         console.info("《" + b.title + '》 is Done!')
                     })
@@ -433,7 +441,7 @@ function getBookBaseInfo(html) {
         var text = ''
         var href = ''
 
-        if (nt == '') {
+        if (nt == ''|| nt == ':') {
             var a = $(this).next()
             if (a.get(0).tagName.toLowerCase() == 'a') {
                 text = a.text().trim();
