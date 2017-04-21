@@ -6,6 +6,7 @@ const DB_VERSION = 1;
 const BOOK_INTERVAL = 50;
 const TAG_INTERVAL = 1500;
 var stopRequest = false;
+var stopQueryInfo = false;
 
 (function () {
 
@@ -128,6 +129,7 @@ var stopRequest = false;
 })()
 
 function getBooksNumInfo() {
+    if (stopQueryInfo) return;
     db.books.count(x => $('#booksTotal').text(x))
     db.books.filter(x => x.isDone && !x.notFound).count(x => $('#booksIsDone').text(x))
 }
