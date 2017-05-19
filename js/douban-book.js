@@ -6,7 +6,8 @@ const DB_VERSION = 1;
 const BOOK_INTERVAL = 50;
 const TAG_INTERVAL = 1500;
 var stopRequest = false;
-var stopQueryInfo = false;
+var stopQueryInfo = true;
+var SEARCH_TYPE = "";
 
 (function () {
 
@@ -92,7 +93,7 @@ var stopQueryInfo = false;
             processDoubanBook()
         })
         $('#btnExport').click(exportDBData)
-        $('#bookInfo').click(getBooksNumInfo)
+        $('#bookInfo').click(showBookInfo)
         $('#btnImport').click(function () {
             var f = $('#fileImport').get(0)
             if (f.files.length < 1) return;
@@ -126,12 +127,17 @@ var stopQueryInfo = false;
 
     console.info("a robot 加载完成 👽");
     setInterval(console.clear, 180e3)
+    setInterval(showBookInfo, 60e3)
 })()
+
+function showBookInfo() {
+    db.books.count(x => $('#booksTotal').text(x))
+    db.books.filter(x => x.isDone && !x.notFound).count(x => $('#booksIsDone').text(x))
+}
 
 function getBooksNumInfo() {
     if (stopQueryInfo) return;
-    db.books.count(x => $('#booksTotal').text(x))
-    db.books.filter(x => x.isDone && !x.notFound).count(x => $('#booksIsDone').text(x))
+    showBookInfo()
 }
 
 function randomRange(min, max) {
@@ -141,6 +147,8 @@ function randomRange(min, max) {
 function exportDBData() {
     db.tasks.toArray(x => downloadData(x, 'tasks.json'))
     db.pages.toArray(x => downloadData(x, 'pages.json'))
+    // var b = []
+    // db.books.filter( x => x.id < 90000).toArray( x => x.forEach(e => b.push(e)))
     db.books.toArray(x => downloadData(x, 'books.json'))
     db.doulist.toArray(x => downloadData(x, 'doulist.json'))
 }
@@ -184,6 +192,41 @@ function processDoubanBookTask() {
     db.tasks.filter(x => !x.isDone).first().then(processCurrentTask)
 }
 
+var SHOULD_COUNT_DUPL = false
+var duplBooks = 0
+var curTagIsDone = {}
+var curTagName = ''
+const MAX_DUPL_BOOKS = 20
+function resetAndRestartProcessNew() {
+    db.tasks.toArray().then(ts => {
+        ts.forEach(e => e.isNew = false)
+        db.tasks.bulkPut(ts).then(() => {
+            db.pages.toArray().then(ps => {
+                ps.forEach(e => e.isNew = false)
+                db.pages.bulkPut(ps).then(() => {
+                    stopRequest = false
+                    SHOULD_COUNT_DUPL = true
+                    processDoubanBookTaskNew()
+                })
+            })
+        })
+    })
+
+}
+
+function processDoubanBookTaskNew() {
+    if (stopRequest) return;
+    SEARCH_TYPE = '&type=R'
+    db.tasks.filter(task => !task.isNew && (SHOULD_COUNT_DUPL && !curTagIsDone[task.value])).first().then(task => {
+        if (SHOULD_COUNT_DUPL) {
+            duplBooks = 0
+            curTagIsDone[task.value] = false
+            curTagName = task.value
+        }
+        processCurrentTaskNew(task)
+    })
+}
+
 function processDoubanBook() {
     if (stopRequest) return;
 
@@ -199,6 +242,70 @@ function processDoubanBookBreadth() {
     db.books.filter(x => !x.isDone).first().then(b => {
         processBookDetailPage(b, processDoubanBookBreadth)
     })
+}
+
+var buffer = []
+var bookBuffer = []
+var recBookBuffer = []
+var douListBuffer = []
+var useBuffer = false
+const BOOK_BUFFER_SIZE = 100
+var bufferCount = 0
+var bufferStartTime = null
+function processDoubanBookBreadthBuffer() {
+    if (stopRequest) return;
+    useBuffer = true
+    bufferStartTime = new Date()
+
+    if (buffer.length < 1) {
+        if (bookBuffer.length > 0) {
+            recBookBuffer.forEach(e => {
+                db.books
+                    .where('subjectId')
+                    .equals(e.subjectId)
+                    .first(c => {
+                        if (!c) {
+                            db.books.add(e)
+                        }
+                    })
+            })
+
+            douListBuffer.forEach(x => {
+                db.doulist
+                    .where('subjectId')
+                    .equals(x.subjectId)
+                    .first(c => {
+                        if (!c) {
+                            db.doulist.add(x)
+                        }
+                    })
+            })
+
+            db.books.bulkPut(bookBuffer).then(() => {
+                console.info('批量增加 ' + bookBuffer.length + ' 本图书!')
+                bufferCount += bookBuffer.length
+                var costTime = (new Date() - bufferStartTime) / 60e3
+                console.info('平均每分钟新增 ' + bufferCount / costTime + ' 本图书!')
+
+                bookBuffer = []
+                douListBuffer = []
+                recBookBuffer = []
+                db.books.filter(x => !x.isDone).limit(BOOK_BUFFER_SIZE).toArray(x => {
+                    x.forEach(e => buffer.push(e))
+                    processBookDetailPage(buffer.pop(), processDoubanBookBreadthBuffer)
+                })
+            })
+        } else {
+            db.books.filter(x => !x.isDone).limit(BOOK_BUFFER_SIZE).toArray(x => {
+                x.forEach(e => buffer.push(e))
+                processBookDetailPage(buffer.pop(), processDoubanBookBreadthBuffer)
+            })
+        }
+
+    } else {
+        processBookDetailPage(buffer.pop(), processDoubanBookBreadthBuffer)
+    }
+
 }
 
 function processDoubanBookDeep() {
@@ -236,11 +343,44 @@ function processCurrentTask(t) {
 
 }
 
+function processCurrentTaskNew(t) {
+    if (stopRequest) return;
+    if (SHOULD_COUNT_DUPL && curTagIsDone[t.value]) {
+        processDoubanBookTaskNew()
+        return
+    }
+    db.pages
+        .where('taskId')
+        .equals(t.id)
+        .filter(x => !x.isNew)
+        .sortBy('value')
+        .then(x => {
+            if (x && x.length > 0) {
+                var p = x[0]
+                if (p.isNew) return;
+                // TODO 处理该tag下该页面的内容
+                processBookTagListPage(t.value, p.value * 20, () => {
+                    db.pages.update(p.id, { isNew: true }).then(() => {
+                        console.info('Tag[' + t.value + '] of New at page ' + p.value + ' is done!')
+                        //getBooksNumInfo()
+                        processCurrentTaskNew(t)
+                    })
+                })
+            } else {
+                db.tasks
+                    .update(t.id, { isNew: true })
+                    .then(processDoubanBookTaskNew)
+            }
+        })
+
+}
+
 function processBookTagListPage(tag, page, callBack) {
     if (stopRequest) return;
+    if (SHOULD_COUNT_DUPL) curTag = tag
     setTimeout(() => {
         try {
-            $.ajax({ url: 'https://book.douban.com/tag/' + tag + '?start=' + page, type: 'GET' })
+            $.ajax({ url: 'https://book.douban.com/tag/' + tag + '?start=' + page + SEARCH_TYPE, type: 'GET' })
                 .done(resp => {
                     parseBookTagListPage($(resp), callBack)
                 })
@@ -277,6 +417,9 @@ function parseBookTagListPage(html, callBack) {
             .equals(id)
             .first(c => {
                 if (c) {
+                    if (SHOULD_COUNT_DUPL && duplBooks++ > MAX_DUPL_BOOKS) {
+                        curTagIsDone[curTagName] = true
+                    }
                     db.books.update(c.id, book)
                 } else {
                     book.isDone = false
@@ -306,18 +449,24 @@ function processBookDetailPage(b, caller) {
                 })
                 .fail(function (x) {
                     if (x && x.status == 404) {
-                        db.books.update(b.id, { isDone: true, notFound: true })
+                        if (useBuffer) {
+                            b.isDone = true
+                            b.notFound = true
+                            bookBuffer.push(b)
+                        } else {
+                            db.books.update(b.id, { isDone: true, notFound: true })
+                        }
                     }
-                    markError(b)
+                    markError(b, caller)
                 });
         } catch (e) {
-            markError(b)
+            markError(b, caller)
         }
     }, BOOK_INTERVAL)
 }
 
 var errorCount = 0
-function markError(b) {
+function markError(b, caller) {
     errorCount++
     if (errorCount > 50) {
         stopRequest = true
@@ -325,11 +474,16 @@ function markError(b) {
         $('#btnGetTags').get(0).disabled = false
     }
     console.error("    获取图书详情页  " + b.subjectId + " 失败")
-    processDoubanBook();
+    if (caller) {
+        caller()
+    } else {
+        processDoubanBook();
+    }
 }
 
 function parseBookDetailPage(html, b, callBack) {
     var book = getBookBaseInfo(html)
+    book.id = b.id
     book.mainPic = $('#mainpic img', html).attr('src')
     var t = $('#dale_book_subject_top_icon', html).next().text().trim()
     if (t) book.title = t
@@ -360,17 +514,48 @@ function parseBookDetailPage(html, b, callBack) {
         _book.isDone = false
         book.recBooks.push(_book)
     })
-    // 将相关图书加入库中
-    book.recBooks.forEach(x => {
-        db.books
-            .where('subjectId')
-            .equals(x.subjectId)
-            .first(c => {
-                if (!c) {
-                    db.books.add(x)
-                }
-            })
+
+    book.doulist = []
+    $('#db-doulist-section li > a', html).each(function () {
+        var _doulist = {}
+        _doulist.title = $(this).text()
+        _doulist.href = $(this).attr('href')
+        _doulist.author = $(this).next().text().replace(/\(|\)/g, '')
+        _doulist.subjectId = _doulist.href.substring(_doulist.href.indexOf('doulist') + 7).replace(/\//g, '').trim()
+        book.doulist.push(_doulist)
     })
+
+    if (useBuffer) {
+        book.recBooks.forEach(e => {
+            recBookBuffer.push(e)
+        })
+        book.doulist.forEach(e => {
+            douListBuffer.push(e)
+        })
+    } else {
+        // 将相关图书加入库中
+        book.recBooks.forEach(e => {
+            db.books
+                .where('subjectId')
+                .equals(e.subjectId)
+                .first(c => {
+                    if (!c) {
+                        db.books.add(e)
+                    }
+                })
+        })
+
+        book.doulist.forEach(x => {
+            db.doulist
+                .where('subjectId')
+                .equals(x.subjectId)
+                .first(c => {
+                    if (!c) {
+                        db.doulist.add(x)
+                    }
+                })
+        })
+    }
 
     book.comments = []
     $('#comment-list-wrapper > .comment-list.hot .comment-item', html).each(function () {
@@ -388,27 +573,6 @@ function parseBookDetailPage(html, b, callBack) {
         book.tags.push($(this).text())
     })
 
-    book.doulist = []
-    $('#db-doulist-section li > a', html).each(function () {
-        var _doulist = {}
-        _doulist.title = $(this).text()
-        _doulist.href = $(this).attr('href')
-        _doulist.author = $(this).next().text().replace(/\(|\)/g, '')
-        _doulist.subjectId = _doulist.href.substring(_doulist.href.indexOf('doulist') + 7).replace(/\//g, '').trim()
-        book.doulist.push(_doulist)
-    })
-
-    book.doulist.forEach(x => {
-        db.doulist
-            .where('subjectId')
-            .equals(x.subjectId)
-            .first(c => {
-                if (!c) {
-                    db.doulist.add(x)
-                }
-            })
-    })
-
     $('#collector > p.pl > a', html).each(function () {
         var t = $(this).text();
         if (t.indexOf('想读') > -1) {
@@ -423,7 +587,12 @@ function parseBookDetailPage(html, b, callBack) {
     })
 
     book.isDone = true
-    db.books.update(b.id, book).then(() => { if (callBack) callBack() })
+    if (useBuffer) {
+        bookBuffer.push(book)
+        if (callBack) callBack()
+    } else {
+        db.books.update(b.id, book).then(() => { if (callBack) callBack() })
+    }
 
 }
 
@@ -443,7 +612,7 @@ function getBookBaseInfo(html) {
         var text = ''
         var href = ''
 
-        if (nt == ''|| nt == ':') {
+        if (nt == '' || nt == ':') {
             var a = $(this).next()
             if (a.get(0).tagName.toLowerCase() == 'a') {
                 text = a.text().trim();
