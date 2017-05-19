@@ -7,11 +7,7 @@ const BOOK_INTERVAL = 50;
 const TAG_INTERVAL = 1500;
 var stopRequest = false;
 var stopQueryInfo = true;
-<<<<<<< HEAD
 var SEARCH_TYPE = "";
-=======
-var searchType = '';
->>>>>>> 479bc14207e0c2d7b0e57530489a6dd7b04794ee
 
 (function () {
 
@@ -44,7 +40,6 @@ var searchType = '';
                 background-color: #ddd;
                 text-align: center;
             }
-            input {padding: 2px;}
             `
         document.getElementsByTagName('head')[0].appendChild(style);
 
@@ -56,18 +51,10 @@ var searchType = '';
                 <div  class="nav-item">
                     <input id="btnImport"  type="button" value="导入数据">
                     <input id="btnExport"  type="button" value="导出数据">
+                    <input id="btnGetTags"  type="button" value="提取标签">
+                    <input id="btnGetBooks"  type="button" value="爬取图书">
                 </div>
-                <div  class="nav-item">
-                    <input id="btnGetTags"  type="button" value="标签综合">
-                    <input id="btnGetNewTags"  type="button" value="标签最新">
-                    <input id="btnGetNewBook"  type="button" value="新书速递">
-                </div>
-                <div  class="nav-item">
-                    <input id="btnGetBooks"  type="button" value="随机爬取">
-                    <input id="btnGetBooksBreadth"  type="button" value="广度爬取">
-                    <input id="btnGetBooksDeep"  type="button" value="深度爬取">
-                </div>
-                <div id="bookInfo" class="nav-item" title="图书统计" style="">
+                    <div id="bookInfo" class="nav-item" title="图书统计" style="">
                     <span id="booksIsDone">0</span>
                     <span > / </span>
                     <span id="booksTotal">0</span>
@@ -75,26 +62,36 @@ var searchType = '';
             </div>
             `
         $(btnHtml).appendTo('body')
-        $('#btnGetTags').click(function () { processDoubanTagsAndBooks() })
+        $('#btnGetTags').click(function () {
+            var ing = $(this).data('ing')
+            if (ing) {
+                stopRequest = true
+                $(this).data('ing', false)
+                $(this).val('提取标签')
+                $('#btnGetBooks').get(0).disabled = false
+            } else {
+                stopRequest = false
+                $(this).data('ing', true)
+                $(this).val('提取中..')
+                $('#btnGetBooks').get(0).disabled = true
+            }
+            processDoubanTagsAndBooks()
+        })
         $('#btnGetBooks').click(function () {
-            if ($(this).get(0).disabled) return
-            $(this).get(0).disabled = true
+            var ing = $(this).data('ing')
+            if (ing) {
+                stopRequest = true
+                $(this).data('ing', false)
+                $(this).val('爬取图书')
+                $('#btnGetTags').get(0).disabled = false
+            } else {
+                stopRequest = false
+                $(this).data('ing', true)
+                $(this).val('爬取中..')
+                $('#btnGetTags').get(0).disabled = true
+            }
             processDoubanBook()
         })
-        $('#btnGetNewTags').click(function () {
-            searchType = '&type=R'
-        })
-        $('#btnGetBooksBreadth').click(function () {
-            if ($(this).get(0).disabled) return
-            $(this).get(0).disabled = true
-            processDoubanBookBreadth()
-        })
-        $('#btnGetBooksDeep').click(function () {
-            if ($(this).get(0).disabled) return
-            $(this).get(0).disabled = true
-            processDoubanBookDeep()
-        })
-
         $('#btnExport').click(exportDBData)
         $('#bookInfo').click(showBookInfo)
         $('#btnImport').click(function () {
@@ -130,28 +127,17 @@ var searchType = '';
 
     console.info("a robot 加载完成 👽");
     setInterval(console.clear, 180e3)
-<<<<<<< HEAD
     setInterval(showBookInfo, 60e3)
 })()
 
 function showBookInfo() {
-=======
-    setInterval(showBooksInfo, 60e3)
-})()
-
-function showBooksInfo() {
->>>>>>> 479bc14207e0c2d7b0e57530489a6dd7b04794ee
     db.books.count(x => $('#booksTotal').text(x))
     db.books.filter(x => x.isDone && !x.notFound).count(x => $('#booksIsDone').text(x))
 }
 
 function getBooksNumInfo() {
     if (stopQueryInfo) return;
-<<<<<<< HEAD
     showBookInfo()
-=======
-    showBooksInfo()
->>>>>>> 479bc14207e0c2d7b0e57530489a6dd7b04794ee
 }
 
 function randomRange(min, max) {
@@ -394,11 +380,7 @@ function processBookTagListPage(tag, page, callBack) {
     if (SHOULD_COUNT_DUPL) curTag = tag
     setTimeout(() => {
         try {
-<<<<<<< HEAD
             $.ajax({ url: 'https://book.douban.com/tag/' + tag + '?start=' + page + SEARCH_TYPE, type: 'GET' })
-=======
-            $.ajax({ url: 'https://book.douban.com/tag/' + tag + '?start=' + page + searchType, type: 'GET' })
->>>>>>> 479bc14207e0c2d7b0e57530489a6dd7b04794ee
                 .done(resp => {
                     parseBookTagListPage($(resp), callBack)
                 })
