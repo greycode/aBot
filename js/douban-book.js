@@ -249,13 +249,13 @@ var bookBuffer = []
 var recBookBuffer = []
 var douListBuffer = []
 var useBuffer = false
-const BOOK_BUFFER_SIZE = 100
+const BOOK_BUFFER_SIZE = 150
 var bufferCount = 0
 var bufferStartTime = null
 function processDoubanBookBreadthBuffer() {
     if (stopRequest) return;
     useBuffer = true
-    bufferStartTime = new Date()
+    if (!bufferStartTime) bufferStartTime = new Date()
 
     if (buffer.length < 1) {
         if (bookBuffer.length > 0) {
@@ -282,10 +282,10 @@ function processDoubanBookBreadthBuffer() {
             })
 
             db.books.bulkPut(bookBuffer).then(() => {
-                console.info('批量增加 ' + bookBuffer.length + ' 本图书!')
+                console.warn('批量增加 ' + bookBuffer.length + ' 本图书!')
                 bufferCount += bookBuffer.length
                 var costTime = (new Date() - bufferStartTime) / 60e3
-                console.info('平均每分钟新增 ' + bufferCount / costTime + ' 本图书!')
+                console.warn('平均每分钟新增 ' + bufferCount / costTime + ' 本图书!')
 
                 bookBuffer = []
                 douListBuffer = []
